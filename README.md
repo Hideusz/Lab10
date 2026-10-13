@@ -29,3 +29,8 @@ Ponieważ to pożądany, przewidziany na ten moment stan interfejsu użytkownika
 
 **6. Czy granica error.tsx przechwytuje błąd layoutu w tym samym segmencie?**
 Nie. Granica `error.tsx` łapie błędy tylko w komponentach-dzieciach (stronach wewnątrz). Żeby złapać błąd głównego layoutu, potrzebny jest `global-error.tsx`.
+
+**8. Rozszerzenie: Prerenderowanie szczegółów (generateStaticParams)**
+Wykorzystano funkcję `generateStaticParams` do wygenerowania statycznego HTML podczas procesu `build` dla produktów o ID od 1 do 5. 
+- **Wynik build:** W konsoli podczas budowania widać, że strony dla ID 1-5 zostały wygenerowane jako w pełni statyczne (kółko `○` / `●`).
+- **Zachowanie poza zbiorem i dynamicParams:** 

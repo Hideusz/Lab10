@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
+import { Navigation } from "@/components/Navigation";
 
 export const metadata: Metadata = {
   title: "Sklep Komputerowy",
@@ -16,13 +17,7 @@ export default function RootLayout({
     <html lang="pl">
       <body>
         <header>
-          <nav>
-            <Link href="/">Strona Główna</Link>
-            <Link href="/product-list">Katalog produktów</Link>
-            <Link href="/basket">Koszyk</Link>
-            <Link href="/order-history">Historia</Link>
-            <Link href="/about">O nas</Link>
-          </nav>
+          <Navigation />
         </header>
         <main>{children}</main>
         <footer>

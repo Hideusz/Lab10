@@ -5,6 +5,7 @@ import { Product, productsArraySchema } from "./types";
 
 // Asynchroniczna funkcja - przygotowanie pod bazę z Lab08
 async function loadProducts(): Promise<Product[]> {
+  await new Promise(resolve => setTimeout(resolve, 1500));
   const filePath = path.join(process.cwd(), "data", "products.json");
   
   try {
@@ -55,4 +56,41 @@ export async function getProductById(id: number): Promise<Product | null> {
     const products = await loadProducts();
     const product = products.find(p => p.id === id);
     return product || null;
+}
+export type CatalogFilters = {
+  type: "all" | "cpu" | "gpu" | "ram" | "disk";
+  stock: "all" | "available" | "unavailable";
+  sort: "name" | "newest";
+};
+
+export async function getFilteredCatalog(filters: CatalogFilters): Promise<Product[]> {
+  const products = await loadProducts();
+  
+  // 1. Filtrowanie
+  let filtered = products.filter(p => {
+    const matchType = filters.type === "all" || p.type === filters.type;
+    const matchStock = filters.stock === "all" 
+      ? true 
+      : filters.stock === "available" ? p.amount > 0 : p.amount === 0;
+    
+    return matchType && matchStock;
+  });
+
+  // 2. Sortowanie (nie mutujemy wejścia, 'filtered' to już nowa tablica z filter)
+  filtered.sort((a, b) => {
+    let diff = 0;
+    if (filters.sort === "newest") {
+      diff = new Date(b.date).getTime() - new Date(a.date).getTime();
+    } else {
+      diff = a.name.localeCompare(b.name, "pl");
+    }
+    
+    // Rozstrzyganie remisów: id rosnąco[cite: 13]
+    if (diff === 0) {
+      return a.id - b.id;
+    }
+    return diff;
+  });
+
+  return filtered;
 }
