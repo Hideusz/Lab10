@@ -6,17 +6,13 @@ import { Suspense } from "react";
 function FiltersContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-
-  // Odczyt obecnych parametrów lub ustawienie domyślnych
   const currentType = searchParams.get("type") || "all";
   const currentStock = searchParams.get("stock") || "all";
   const currentSort = searchParams.get("sort") || "name";
 
-  // Funkcja aktualizująca URL bez przeładowania strony[cite: 13]
   const updateFilter = (key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set(key, value);
-    // Używamy push, aby historia przeglądarki zapamiętała zmianę (przycisk Wstecz zadziała)[cite: 13]
     router.push(`?${params.toString()}`);
   };
 
@@ -67,8 +63,6 @@ function FiltersContent() {
     </div>
   );
 }
-
-// Komponent używający useSearchParams w buildzie wymaga granicy Suspense[cite: 14]
 export function Filters() {
   return (
     <Suspense fallback={<div>Ładowanie filtrów...</div>}>

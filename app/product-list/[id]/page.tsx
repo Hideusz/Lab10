@@ -7,7 +7,6 @@ type Props = {
   params: Promise<{ id: string }>;
 };
 
-// Generowanie tytułu strony na podstawie produktu[cite: 13]
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id: idStr } = await params;
   const product = await getProductById(Number(idStr));
@@ -19,10 +18,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 export default async function ProductDetails({ params }: Props) {
-  // Asynchroniczny odczyt parametrów zgodnie z Next.js 16.3[cite: 12, 13]
   const { id: idStr } = await params;
-
-  // Rygorystyczna walidacja: brak zer wiodących, bezpieczny zakres, same cyfry[cite: 12, 13]
   const isValidFormat = /^[1-9]\d*$/.test(idStr);
   if (!isValidFormat) notFound();
 
@@ -31,7 +27,6 @@ export default async function ProductDetails({ params }: Props) {
 
   const product = await getProductById(idNum);
   
-  // Jeśli funkcja repozytorium zwróci null, rzucamy 404[cite: 13]
   if (!product) notFound();
 
   return (
@@ -73,9 +68,7 @@ export default async function ProductDetails({ params }: Props) {
   );
 }
 
-// Rozszerzenie: Prerenderowanie podczas budowania aplikacji dla wybranych ID
 export async function generateStaticParams() {
-  // Przykładowo generujemy statycznie gotowe HTML-e dla pierwszych 5 produktów
   return [
     { id: "1" },
     { id: "2" },
@@ -85,5 +78,4 @@ export async function generateStaticParams() {
   ];
 }
 
-// Ustawienie true pozwala renderować "w locie" pozostałe produkty, których tu nie wypisaliśmy[cite: 16]
 export const dynamicParams = true;
