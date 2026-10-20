@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "eslint .",
     "test": "vitest run",
-    "update-stock": "tsx scripts/update-stock.ts"
+    "update-stock": "tsx scripts/update-stock.ts",
+    "verify-orders": "tsx scripts/verify-orders.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.10.1",

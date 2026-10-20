@@ -59,3 +59,17 @@ Wykorzystano funkcję `generateStaticParams` do wygenerowania statycznego HTML p
 5. Przejdź do innej trasy podczas otwartego modala. Slot `@modal` powinien się wyczyścić.
 
 Skrypt `npm run lint` uruchamia ESLint bez wycofanego `next lint`.
+
+## 7. Rozszerzenia Lab 08: Model koszyka oraz Historia zamówień
+
+### 7.1. Model koszyka (`User`, `Cart`, `CartItem`)
+- Przygotowano model `User` zgodny ze specyfikacją Better Auth (`id` typu `String`, `name`, unikalny `email`, `emailVerified`, opcjonalne `image`, `createdAt`, `updatedAt`) oraz zseedowano fikcyjne konto `jan.kowalski@example.com`.
+- Model `Cart` posiada unikalny klucz `userId` (`@unique`), a `CartItem` wymusza unikalność pary `@@unique([cartId, productId])`.
+- Usunięcie koszyka kaskadowo usuwa jego pozycje (`onDelete: Cascade`).
+- W osobnej migracji SQL (`cart_and_orders`) dodano ograniczenie `CHECK ("quantity" BETWEEN 1 AND 99)`.
+
+### 7.2. Historia zamówień (`Order`, `OrderItem`)
+- Dodano modele `Order` (z unikalnym `orderNumber`, jawnym statusem enum `OrderStatus` i sumą `totalAmount` typu `BigInt` w groszach) oraz `OrderItem` (przechowujący snapshot z chwili zakupu: `productCode`, `productName`, `unitPrice` w groszach, dodatnią ilość `quantity` oraz iloczyn `lineTotal` typu `BigInt`).
+- Relacja `OrderItem -> Product` jest opcjonalna z akcją `onDelete: SetNull`, dzięki czemu usunięcie produktu z katalogu nie usuwa historii zamówień, a jedynie zeruje referencję `productId` przy zachowaniu pełnej kopii danych produktu.
+- W migracji SQL dodano więzy `CHECK` dla dodatniej ilości (`quantity > 0`), nieujemnej ceny jednostkowej (`unitPrice >= 0`) oraz zgodności `lineTotal = unitPrice * quantity`.
+- Skrypt `prisma/seed.ts` tworzy cztery deterministyczne zamówienia (`ORD-2026-0001` .. `ORD-2026-0004`), a skrypt `npm run verify-orders` oraz testy integracyjne w `lib/repository.test.ts` potwierdzają, że zmiana aktualnej ceny produktu w tabeli `Product` nie zmienia wartości historycznych zamówień.

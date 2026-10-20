@@ -15,20 +15,92 @@ model Category {
 }
 
 model Product {
-  id          Int      @id
-  code        String   @unique
+  id          Int         @id
+  code        String      @unique
   name        String
-  nameSortKey String   @db.Text
+  nameSortKey String      @db.Text
   description String
   image       String
   price       Int
   amount      Int
-  date        DateTime @db.Timestamptz(3)
+  date        DateTime    @db.Timestamptz(3)
   categoryId  Int
-  category    Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  category    Category    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  cartItems   CartItem[]
+  orderItems  OrderItem[]
 
   @@index([categoryId])
   @@index([amount])
   @@index([nameSortKey, id])
   @@index([date(sort: Desc), id])
+}
+
+model User {
+  id            String   @id
+  name          String
+  email         String   @unique
+  emailVerified Boolean  @default(false)
+  image         String?
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @db.Timestamptz(3)
+  cart          Cart?
+  orders        Order[]
+}
+
+model Cart {
+  id        Int        @id @default(autoincrement())
+  userId    String     @unique
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime   @updatedAt @db.Timestamptz(3)
+  items     CartItem[]
+}
+
+model CartItem {
+  id        Int     @id @default(autoincrement())
+  cartId    Int
+  productId Int
+  quantity  Int
+  cart      Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@unique([cartId, productId])
+  @@index([productId])
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  SHIPPED
+  COMPLETED
+  CANCELLED
+}
+
+model Order {
+  id          Int         @id @default(autoincrement())
+  orderNumber String      @unique
+  userId      String
+  user        User        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  status      OrderStatus @default(PENDING)
+  totalAmount BigInt      @db.BigInt
+  createdAt   DateTime    @default(now()) @db.Timestamptz(3)
+  items       OrderItem[]
+
+  @@index([userId])
+}
+
+model OrderItem {
+  id          Int      @id @default(autoincrement())
+  orderId     Int
+  productId   Int?
+  productCode String
+  productName String
+  unitPrice   Int
+  quantity    Int
+  lineTotal   BigInt   @db.BigInt
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product     Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@unique([orderId, productCode])
+  @@index([productId])
 }
