@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { productSchema, productsArraySchema } from "./types";
-import { getCatalogByCategory } from "./repository";
+import { getCatalogByCategory, getProductById } from "./repository";
 import { getFilteredCatalog } from "./repository";
 import { vi } from "vitest";
 
@@ -52,4 +52,15 @@ test("Sortowanie najnowsze rozstrzyga remisy po ID", async () => {
     const d2 = new Date(result[1].date).getTime();
     expect(d1).toBeGreaterThanOrEqual(d2);
   }
+});
+test("Nieprawidłowe ID produktu zwraca null", async () => {
+  await expect(getProductById(0)).resolves.toBeNull();
+  await expect(getProductById(-1)).resolves.toBeNull();
+  await expect(getProductById(1.5)).resolves.toBeNull();
+  await expect(getProductById(2147483648)).resolves.toBeNull();
+  await expect(getProductById(Number.NaN)).resolves.toBeNull();
+});
+
+test("Nieistniejące poprawne ID produktu zwraca null", async () => {
+  await expect(getProductById(2147483647)).resolves.toBeNull();
 });

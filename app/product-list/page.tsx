@@ -3,6 +3,7 @@ import { getFilteredCatalog, CatalogFilters } from "@/lib/repository";
 import { Filters } from "@/components/Filters";
 import Image from "next/image";
 import Link from "next/link";
+import { connection } from "next/server";
 
 async function ProductGrid({ filters }: { filters: CatalogFilters }) {
   const products = await getFilteredCatalog(filters);
@@ -15,15 +16,22 @@ async function ProductGrid({ filters }: { filters: CatalogFilters }) {
     <ul className="product-grid">
       {products.map((product) => (
         <li key={product.id} className="product-card">
-          {}
-          <Link href={`/product-list/${product.id}`} style={{ textDecoration: "none", color: "inherit", display: "block" }}>
-            <Image 
-              src={product.image} 
-              alt={product.name} 
-              width={400} 
-              height={400} 
-              style={{ width: "100%", height: "auto", borderRadius: "8px", marginBottom: "1rem" }} 
+          <Link
+            id={`product-image-trigger-${product.id}`}
+            href={`/product-list/${product.id}/image`}
+            className="product-image-link"
+            aria-label={`Powiększ zdjęcie produktu ${product.name}`}
+          >
+            <Image
+              src={product.image}
+              alt={product.name}
+              width={400}
+              height={400}
+              sizes="(max-width: 700px) 100vw, (max-width: 1100px) 50vw, 400px"
+              style={{ width: "100%", height: "auto", borderRadius: "8px", marginBottom: "1rem" }}
             />
+          </Link>
+          <Link href={`/product-list/${product.id}`} className="product-card__details">
             <h2>{product.name}</h2>
             <p><strong>Kategoria:</strong> {product.type}</p>
             <p><strong>Cena:</strong> {(product.price / 100).toFixed(2)} zł</p>
@@ -42,6 +50,7 @@ type Props = {
 };
 
 export default async function ProductList({ searchParams }: Props) {
+  await connection();
   const resolvedParams = await searchParams;
 
   const getSingleValue = (val: string | string[] | undefined) => 

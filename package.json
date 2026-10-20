@@ -2,26 +2,35 @@
   "name": "computer-shop-2026ak",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "test": "vitest run"
+    "lint": "eslint .",
+    "test": "vitest run",
+    "update-stock": "tsx scripts/update-stock.ts"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "7.10.1",
+    "@prisma/client": "7.10.1",
+    "dotenv": "18.0.8",
     "next": "16.3.8",
+    "pg": "8.23.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "server-only": "^0.0.1",
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@types/node": "^20",
+    "@types/node": "24.19.2",
+    "@types/pg": "8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.8",
+    "prisma": "7.10.1",
+    "tsx": "4.23.15",
     "typescript": "^5",
     "vite": "^8.3.4",
     "vitest": "^5.0.4"

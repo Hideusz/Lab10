@@ -1,4 +1,4 @@
-# Sklep Komputerowy - Lab06
+# Sklep Komputerowy - Lab07
 
 ## Środowisko i uruchomienie
 - **Node.js**: 24 LTS
@@ -33,4 +33,29 @@ Nie. Granica `error.tsx` łapie błędy tylko w komponentach-dzieciach (stronach
 **8. Rozszerzenie: Prerenderowanie szczegółów (generateStaticParams)**
 Wykorzystano funkcję `generateStaticParams` do wygenerowania statycznego HTML podczas procesu `build` dla produktów o ID od 1 do 5. 
 - **Wynik build:** W konsoli podczas budowania widać, że strony dla ID 1-5 zostały wygenerowane jako w pełni statyczne (kółko `○` / `●`).
-- **Zachowanie poza zbiorem i dynamicParams:** 
+- **Zachowanie poza zbiorem i `dynamicParams`:** dla identyfikatorów spoza listy `1–5` `dynamicParams = true` pozwala Next.js obsłużyć trasę dynamicznie. Po dodaniu bazy danych w Lab 08 odczyty muszą korzystać z aktualnego źródła danych.
+
+## Rozszerzenie Lab 07: modal obrazu
+
+### Jak działa routing
+
+- Kliknięcie obrazu w katalogu lub na stronie produktu prowadzi do `/product-list/{id}/image` przez komponent `Link`.
+- Przy nawigacji klientowej ścieżka jest przechwytywana przez `app/@modal/(.)product-list/[id]/image/page.tsx`. Slot `@modal` renderuje modal nad aktualną stroną, nie zmieniając jej kontekstu.
+- Przy bezpośrednim wejściu lub odświeżeniu `/product-list/{id}/image` uruchamia się `app/product-list/[id]/image/page.tsx`, więc obraz jest wyświetlany jako pełna strona.
+- `app/@modal/default.tsx` zwraca `null` dla nieaktywnego slotu; `app/@modal/page.tsx` oraz `app/@modal/[...catchAll]/page.tsx` czyszczą go podczas nawigacji klientowej na inne trasy. `app/default.tsx` określa fallback niejawnego slotu `children` wymagany dla nieodtwarzalnego stanu przy pełnym ładowaniu.
+
+### Obsługa i dostępność
+
+- Przycisk zamykania i klawisz Escape wywołują `router.back()`, co pozwala przywrócić poprzedni URL (w tym filtry katalogu). Kliknięcie przyciemnionego tła także zamyka modal.
+- Modal korzysta z natywnego elementu `<dialog>` otwieranego metodą `showModal()`, co zapewnia semantykę okna modalnego i natywne ograniczenie fokusu. Fokus początkowy trafia na przycisk zamknięcia, a po zamknięciu jest przywracany do linku obrazu, o ile nadal istnieje w DOM.
+- Osobny widok pełnoekranowy ma link powrotu do szczegółów produktu, więc nie wymaga historii przeglądarki, aby przejść z powrotem do sklepu.
+
+### Scenariusze ręcznej weryfikacji
+
+1. W katalogu kliknij zdjęcie. URL powinien kończyć się na `/product-list/{id}/image`, a zdjęcie ma otworzyć się nad katalogiem.
+2. Zamknij przyciskiem, klawiszem Escape i kliknięciem tła. Sprawdź powrót do poprzedniego widoku oraz filtrów; fokus powinien wrócić na link zdjęcia.
+3. Otwórz ten sam URL obrazu w nowej karcie lub odśwież stronę. Powinna pokazać się pełna strona obrazu z linkiem „Wróć do produktu”.
+4. Otwórz modal, użyj przycisku Wstecz, a następnie Dalej w przeglądarce. Modal powinien się zamknąć i ponownie otworzyć zgodnie ze stanem historii.
+5. Przejdź do innej trasy podczas otwartego modala. Slot `@modal` powinien się wyczyścić.
+
+Skrypt `npm run lint` uruchamia ESLint bez wycofanego `next lint`.
