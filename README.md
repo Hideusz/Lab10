@@ -73,3 +73,31 @@ Skrypt `npm run lint` uruchamia ESLint bez wycofanego `next lint`.
 - Relacja `OrderItem -> Product` jest opcjonalna z akcją `onDelete: SetNull`, dzięki czemu usunięcie produktu z katalogu nie usuwa historii zamówień, a jedynie zeruje referencję `productId` przy zachowaniu pełnej kopii danych produktu.
 - W migracji SQL dodano więzy `CHECK` dla dodatniej ilości (`quantity > 0`), nieujemnej ceny jednostkowej (`unitPrice >= 0`) oraz zgodności `lineTotal = unitPrice * quantity`.
 - Skrypt `prisma/seed.ts` tworzy cztery deterministyczne zamówienia (`ORD-2026-0001` .. `ORD-2026-0004`), a skrypt `npm run verify-orders` oraz testy integracyjne w `lib/repository.test.ts` potwierdzają, że zmiana aktualnej ceny produktu w tabeli `Product` nie zmienia wartości historycznych zamówień.
+
+# Sklep Komputerowy - Lab 09 (Uwierzytelnianie i własny koszyk)
+
+## 1. Wersje i konfiguracja środowiska
+- **Node.js**: 24 LTS
+- **Next.js**: 16.3.8
+- **Baza danych**: PostgreSQL 17 (Docker)
+- **Prisma ORM**: 7.10.1 (z `@better-auth/prisma-adapter@1.7.14`)
+- **Better Auth**: 1.7.7
+- **Konfiguracja OAuth (GitHub)**: Aplikacja zarejestrowana jako "OAuth App". Homepage URL to `http://localhost:3000`, a callback URL to `http://localhost:3000/api/auth/callback/github`.
+
+## 2. Migracje i struktura danych
+W projekcie zostały zachowane migracje z poprzednich laboratoriów (`catalog`, `cart_and_orders`), a nowa struktura sesji została nałożona dedykowaną migracją `auth_cart`. Migracja ta wprowadziła tabele `User`, `Session`, `Account`, `Verification` zdefiniowane przez Better Auth oraz scaliła je relacyjnie z naszymi modelami `Cart`, `CartItem`, `Order` i `OrderItem`. 
+
+## 3. Kontrakt operacji i polityka ilości
+Interakcja z koszykiem opiera się na ściśle kontrolowanym kontrakcie po stronie serwera:
+- **Polityka ilości**: Baza danych wymusza `CHECK ("quantity" BETWEEN 1 AND 99)`. Walidator `setQuantity` w `lib/cart.ts` upewnia się, że ilość to bezpieczna liczba całkowita (1-99) nieprzekraczająca aktualnego stanu w magazynie (`Product.amount`).
+- **Atomowość `addProduct`**: Przy wywołaniu dodania tego samego produktu z dwóch równoległych żądań, transakcja nakłada blokadę wiersza na produkt (`FOR UPDATE`), co serializuje operacje. Jeśli ilość pozwala, dodawane jest +2 szt. Jeśli w magazynie jest tylko 1 wolna sztuka, jedno z żądań zwraca błąd `OUT_OF_STOCK`, chroniąc limit stanu.
+
+## 4. Testy A/B i izolacja użytkowników
+Testy wykonane za pomocą Vitest (`lib/cart.test.ts`) potwierdzają pełną izolację. Próba aktualizacji lub usunięcia `itemId` należącego do Użytkownika B przez Użytkownika A kończy się błędem `NOT_FOUND` bez ujawniania danych innej osoby, co gwarantuje klauzula `where: { id: itemId, cart: { userId: <ID z sesji> } }`. Brak sesji lub unieważnienie jej w bazie danych odrzuca każdą próbę mutacji.
+
+## 5. Ustalanie właściciela z sesji (wskazanie w kodzie)
+Właściciel ustalany jest **wyłącznie po stronie serwera** na podstawie pliku `lib/auth.ts`, który eksportuje funkcję `getCurrentSession()`. Odczytuje ona ciasteczko sesyjne za pomocą nagłówków (`headers()`).
+Główny strażnik tożsamości znajduje się w pliku `lib/cart.ts` w funkcji `resolveAuthenticatedUserId()`:
+```typescript
+const session = await getCurrentSession();
+const userId = session?.user?.id;

@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { getProductForRoute } from "@/lib/product-route";
 import { connection } from "next/server";
+import { AddToCartButton } from "@/components/AddToCartButton";
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -61,6 +62,7 @@ export default async function ProductDetails({ params }: Props) {
           <p style={{ color: product.amount > 0 ? "lightgreen" : "salmon", fontWeight: "bold" }}>
             {product.amount > 0 ? `Dostępność: ${product.amount} szt.` : "Niedostępny"}
           </p>
+          <AddToCartButton productId={product.id} disabled={product.amount <= 0} />
         </div>
       </div>
     </div>

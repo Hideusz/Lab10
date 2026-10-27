@@ -4,6 +4,7 @@ import { Filters } from "@/components/Filters";
 import Image from "next/image";
 import Link from "next/link";
 import { connection } from "next/server";
+import { AddToCartButton } from "@/components/AddToCartButton";
 
 async function ProductGrid({ filters }: { filters: CatalogFilters }) {
   const products = await getFilteredCatalog(filters);
@@ -39,6 +40,7 @@ async function ProductGrid({ filters }: { filters: CatalogFilters }) {
               <strong>Dostępność:</strong> {product.amount > 0 ? `${product.amount} szt.` : "Niedostępny"}
             </p>
           </Link>
+          <AddToCartButton productId={product.id} disabled={product.amount <= 0} />
         </li>
       ))}
     </ul>
