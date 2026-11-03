@@ -9,7 +9,7 @@ function requireEnv(name: string): string {
   if (!value || value.trim().length === 0) {
     throw new Error(`Brak wymaganej zmiennej środowiskowej: ${name}`);
   }
-  return value;
+  return value.trim();
 }
 
 const secret = requireEnv("BETTER_AUTH_SECRET");
@@ -24,6 +24,7 @@ const githubClientSecret = requireEnv("GITHUB_CLIENT_SECRET");
 export const auth = betterAuth({
   secret,
   baseURL,
+  trustedOrigins: [baseURL],
   database: prismaAdapter(prisma, {
     provider: "postgresql",
   }),
@@ -41,10 +42,6 @@ export const auth = betterAuth({
   },
 });
 
-/**
- * Odczytuje i weryfikuje sesję w bazie danych na podstawie nagłówków bieżącego żądania.
- * Zwrócone session.user.id jest jedynym źródłem tożsamości właściciela na serwerze.
- */
 export async function getCurrentSession() {
   return auth.api.getSession({
     headers: await headers(),

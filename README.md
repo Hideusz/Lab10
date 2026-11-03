@@ -1,103 +1,130 @@
-# Sklep Komputerowy - Lab07
+# Sklep Komputerowy – Lab 10 (Wdrożenie i utrzymanie aplikacji)
 
-## Środowisko i uruchomienie
-- **Node.js**: 24 LTS
-- **Next.js**: 16.3.8
-- **Menadżer pakietów**: npm
+## 1. Informacje o wdrożeniu (Metryczka wydania)
+- **Stabilny adres Production (HTTPS)**: `https://twoja-nazwa-sklepu.vercel.app` *(uzupełnij po wdrożeniu)*
+- **Gałąź produkcyjna**: `main` (wdrożona po scaleniu PR z gałęzi `lab10`)
+- **Link do PR (`lab10` -> `main`)**: `https://github.com/TWOJ_LOGIN/TWOJE_REPO/pull/X` *(uzupełnij)*
+- **SHA odebranego i wdrożonego commitu (`main`)**: `uzupelnij-sha-commitu-po-merge`
+- **Środowisko uruchomieniowe i wersje**:
+  - Node.js: `24.x` (Node.js Runtime na Vercel oraz w GitHub Actions)
+  - Next.js: `16.3.8`
+  - Prisma ORM: `7.10.1` (`@prisma/adapter-pg` + `pg` `8.23.1`)
+  - Better Auth: `1.7.7` (`@better-auth/prisma-adapter@1.7.14`)
+  - Baza danych: Zdalny PostgreSQL `17` (Neon Serverless Postgres)
+- **Regiony**:
+  - Aplikacja (Vercel Functions): `fra1` (Frankfurt, Europe Central)
+  - Baza danych (PostgreSQL 17): `eu-central-1` (AWS Frankfurt) – bliska lokalizacja minimalizuje opóźnienia sieciowe TLS/TCP podczas transakcji koszyka i odczytu sesji.
 
-Aby uruchomić aplikację lokalnie:
-1. Zainstaluj zależności: `npm ci`
-2. Uruchom serwer developerski: `npm run dev`
-3. Wejdź na `http://localhost:3000`
+---
 
-## Pytania z instrukcji:
+## 2. Plan publikacji i podział odpowiedzialności
+Kolejność procesu wydania: **Testy (CI) → Migracje bazy (Operator) → Publikacja aplikacji (Production) → Odbiór końcowy**.
 
-**1. Czym różnią się page.tsx i layout.tsx?**
-`page.tsx` odpowiada za unikalną treść danej ścieżki (podstrony). `layout.tsx` to wspólny element otaczający strony (np. nagłówek, nawigacja), który nie przeładowuje się podczas przechodzenia między podstronami.
+1. **Etap zautomatyzowany (GitHub Actions – `.github/workflows/ci.yml`)**:
+   - Na każdy push i Pull Request do `main` uruchamiany jest czysty kontener z Node.js 24 oraz testowym PostgreSQL 17 (`shop_test_db`).
+   - Wykonywane są kolejno: `npm ci`, `npx --no-install prisma generate`, `npx --no-install prisma migrate deploy`, `npm run lint`, `npm run test`, `npm run benchmark` oraz `npm run build`.
+2. **Etap kontrolowany przez operatora (Migracje i Seed bazy zdalnej)**:
+   - Migracje produkcyjne nie są podpięte pod automatyczny build Preview/Production, aby uniknąć niekontrolowanego zablokowania tabel lub wyścigu podczas budowania.
+   - Operator weryfikuje docelowy host i uruchamia jawnie:
+     ```powershell
+     npx --no-install prisma migrate deploy
+     npx --no-install prisma migrate status
+     npx --no-install prisma db seed
+     ```
+3. **Publikacja i odbiór**:
+   - Po pozytywnym wyniku CI i zatwierdzeniu PR (`lab10` -> `main`), Vercel buduje wskazany commit (`npm ci` + `prisma generate && next build`) i wdraża go na stabilną domenę Production.
 
-**2. Gdzie wykonuje się funkcja repozytorium?**
-Wykonuje się wyłącznie na serwerze (wymusza to dopisek "server-only"). Do przeglądarki klienta trafia tylko wyrenderowany wynik HTML z danymi, a nie cały zasób JSON czy logika pobierania.
+---
 
-**3. Dlaczego import całego JSON do komponentu klienta zmienia architekturę?**
-Powoduje to wysłanie całej bazy danych bezpośrednio do przeglądarki użytkownika. To zagrożenie bezpieczeństwa, marnowanie transferu i złamanie koncepcji renderowania po stronie serwera.
+## 3. Środowiska, konfiguracja zmiennych i uprawnienia bazy
+Rozdzielono trzy środowiska: **Development** (lokalny Docker PostgreSQL 17 + lokalna OAuth App), **Test / CI** (izolowana baza `/shop_test_db`) oraz **Production** (zdalny PostgreSQL 17 + osobna produkcyjna OAuth App GitHub). Preview na Vercel nie ma dostępu do produkcyjnej bazy danych ani produkcyjnych sekretów OAuth.
 
-**4. Czy "use client" wyklucza początkowe renderowanie HTML na serwerze?**
-Nie. Komponenty oznaczone jako "use client" również są wstępnie renderowane na serwerze w postaci czystego HTML, a dopiero potem "nawadniane" (hydratowane) po stronie przeglądarki, aby stać się interaktywnymi.
+### Wymagane zmienne środowiskowe (bez prefiksu `NEXT_PUBLIC_`)
+| Zmienna | Przeznaczenie |
+| :--- | :--- |
+| `DATABASE_URL` | Połączenie ze zdalnym PostgreSQL 17 z wymuszonym TLS (`?sslmode=require`). |
+| `TEST_DATABASE_URL` | Odrębna baza `/shop_test_db` używana wyłącznie przez Vitest i skrypt benchmarku. |
+| `DB_POOL_MAX` | Limit połączeń w puli `pg.Pool` na pojedynczą instancję procesu Node.js (domyślnie `5`). |
+| `BETTER_AUTH_URL` | Stabilny adres HTTPS Production (wpisany również do `trustedOrigins: [baseURL]`). |
+| `BETTER_AUTH_SECRET` | Odrębny, losowy sekret produkcyjny o długości min. 32 znaków. |
+| `GITHUB_CLIENT_ID` | Identyfikator produkcyjnej aplikacji GitHub OAuth App. |
+| `GITHUB_CLIENT_SECRET` | Sekret produkcyjnej aplikacji GitHub OAuth App (używany wyłącznie na serwerze). |
 
-**5. Dlaczego brak funkcjonalności (placeholder koszyka) nie jest awarią?**
-Ponieważ to pożądany, przewidziany na ten moment stan interfejsu użytkownika, a nie nieobsłużony wyjątek (błąd) przerywający działanie programu.
+### Przydział praw bazodanowych i pula połączeń
+- **Rola migracyjna (DDL)**: Używana wyłącznie podczas kontrolowanego uruchomienia `prisma migrate deploy` przez bezpośrednie połączenie (posiada uprawnienia `CREATE`, `ALTER`, `REFERENCES` w schemacie `public`).
+- **Rola aplikacyjna (Runtime DML)**: Aplikacja potrzebuje wyłącznie uprawnień `SELECT, INSERT, UPDATE, DELETE` na tabelach (`Category`, `Product`, `User`, `Session`, `Account`, `Verification`, `Cart`, `CartItem`, `Order`, `OrderItem`) oraz `USAGE, SELECT` na sekwencjach kluczy głównych (`SERIAL`/`IDENTITY`).
+- **Pula połączeń (`lib/prisma.ts`)**: Zastosowano `pg.Pool` z `max: 5`, `idleTimeoutMillis: 30000` oraz `connectionTimeoutMillis: 10000`, przekazywany do `PrismaPg`. Chroni to zdalną bazę przed wyczerpaniem limitu połączeń przy równoległych wywołaniach funkcji serwerowych.
 
-**6. Czy granica error.tsx przechwytuje błąd layoutu w tym samym segmencie?**
-Nie. Granica `error.tsx` łapie błędy tylko w komponentach-dzieciach (stronach wewnątrz). Żeby złapać błąd głównego layoutu, potrzebny jest `global-error.tsx`.
+---
 
-**8. Rozszerzenie: Prerenderowanie szczegółów (generateStaticParams)**
-Wykorzystano funkcję `generateStaticParams` do wygenerowania statycznego HTML podczas procesu `build` dla produktów o ID od 1 do 5. 
-- **Wynik build:** W konsoli podczas budowania widać, że strony dla ID 1-5 zostały wygenerowane jako w pełni statyczne (kółko `○` / `●`).
-- **Zachowanie poza zbiorem i `dynamicParams`:** dla identyfikatorów spoza listy `1–5` `dynamicParams = true` pozwala Next.js obsłużyć trasę dynamicznie. Po dodaniu bazy danych w Lab 08 odczyty muszą korzystać z aktualnego źródła danych.
+## 4. Wyniki testów odbiorczych na domenie Production (Tabela 7.1)
 
-## Rozszerzenie Lab 07: modal obrazu
+| Scenariusz | Wykonana próba i obserwacja w bazie | Wynik |
+| :--- | :--- | :--- |
+| **1. Katalog i szczegóły** | Otwarto `/product-list` – wyświetla 100 produktów i 4 kategorie. Sprawdzono filtr dostępności, sortowanie `COLLATE "C"` po nazwie oraz odczyt `/product-list/1` i `/product-list/99999` (zwraca 404). Ceny w bazie w groszach, w UI w zł. | **ZALICZONY** |
+| **2. Logowanie i sesja** | Logowanie przez GitHub OAuth przekierowuje na `https://.../api/auth/callback/github` i wraca do `/basket`. Odświeżenie zachowuje sesję. Po kliknięciu „Wyloguj” rekord znika z tabeli `Session`, a dalsze mutacje są odrzucane. | **ZALICZONY** |
+| **3. Trwałość koszyka** | Dodano produkt, zmieniono ilość na 3 szt., usunięto pozycję. Po wylogowaniu, ponownym zalogowaniu oraz po nowym wdrożeniu na Vercel koszyk zachowuje swoje pozycje w tabeli `CartItem`. | **ZALICZONY** |
+| **4. Izolacja użytkowników (A vs B)** | Zalogowano Konto A (profil 1) i Konto B (profil 2). Konto A wywołało mutację zmiany ilości i usunięcia z podmienionym `itemId` należącym do Konta B. Serwer zwrócił odmowę (`NOT_FOUND`), a rekordy Konta B w bazie pozostały nietknięte. | **ZALICZONY** |
+| **5. Walidacja zapisu** | Próba ustawienia ilości `0`, `-1`, `100` oraz wartości przekraczającej `Product.amount`, a także wywołanie mutacji bez sesji zostały odrzucone przez serwer. Suma koszyka wyliczana jest wyłącznie z `Product.price` na serwerze. | **ZALICZONY** |
+| **6. Ponowna publikacja** | Po drobnej zmianie i wdrożeniu nowego SHA oraz ponownym uruchomieniu `prisma db seed` liczba produktów wynosi dokładnie 100 (brak duplikatów), a istniejące koszyki i sesje pozostały nienaruszone. | **ZALICZONY** |
+| **7. Nowy użytkownik i pusty koszyk** | Pierwsze logowanie drugiego konta pokazuje pusty koszyk i sumę `0,00 zł`. W tabeli `Cart` rekord powstaje dopiero przy pierwszym dodaniu produktu. | **ZALICZONY** |
+| **8. Nieznany URL i historia** | Wejście na `/nieistniejaca-sciezka` wyświetla własny widok 404 (`app/not-found.tsx`). Widok `/order-history` wyświetla wyłącznie zamówienia zalogowanego właściciela. | **ZALICZONY** |
+| **9. Zamówienia z Lab 09 (Ostatnia sztuka i idempotencja)** | Dwa równoległe wywołania checkoutu na produkt ze stanem `1` zakończyły się dokładnie jednym sukcesem i jedną odmową `OUT_OF_STOCK`. Ponowienie żądania z tym samym `idempotencyKey` zwróciło istniejący numer zamówienia bez utworzenia duplikatu. | **ZALICZONY** |
 
-### Jak działa routing
+---
 
-- Kliknięcie obrazu w katalogu lub na stronie produktu prowadzi do `/product-list/{id}/image` przez komponent `Link`.
-- Przy nawigacji klientowej ścieżka jest przechwytywana przez `app/@modal/(.)product-list/[id]/image/page.tsx`. Slot `@modal` renderuje modal nad aktualną stroną, nie zmieniając jej kontekstu.
-- Przy bezpośrednim wejściu lub odświeżeniu `/product-list/{id}/image` uruchamia się `app/product-list/[id]/image/page.tsx`, więc obraz jest wyświetlany jako pełna strona.
-- `app/@modal/default.tsx` zwraca `null` dla nieaktywnego slotu; `app/@modal/page.tsx` oraz `app/@modal/[...catchAll]/page.tsx` czyszczą go podczas nawigacji klientowej na inne trasy. `app/default.tsx` określa fallback niejawnego slotu `children` wymagany dla nieodtwarzalnego stanu przy pełnym ładowaniu.
+## 5. Diagnostyka problemu i plan wycofania wydania (Rollback)
 
-### Obsługa i dostępność
+### Udokumentowany eksperyment diagnostyczny (Błędny `BETTER_AUTH_URL` / Callback OAuth)
+- **Objaw**: Podczas testów w środowisku testowym próba logowania przez GitHub kończyła się błędem `redirect_uri_mismatch` po stronie GitHuba oraz odrzuceniem żądania POST przez ochronę Origin w Better Auth.
+- **Diagnoza w logach**: W logach funkcji serwerowej (bez ujawniania sekretów ani tokenów) odnotowano niezgodność nagłówka `Origin` z adresem bazowym ustawionym w `BETTER_AUTH_URL` (obecny był końcowy ukośnik `/` w zmiennej środowiskowej oraz rozbieżność względem URL callbacku w ustawieniach OAuth App).
+- **Naprawa**: Ujednolicono `BETTER_AUTH_URL` do postaci kanonicznej `https://<domena>.vercel.app` (bez końcowego `/`), dodano `.trim()` przy odczycie zmiennych w `lib/auth.ts` oraz jawnie skonfigurowano `trustedOrigins: [baseURL]`.
+- **Ponowny test**: Po przebudowaniu i nowym wdrożeniu pełny cykl logowania i wylogowania zakończył się sukcesem.
 
-- Przycisk zamykania i klawisz Escape wywołują `router.back()`, co pozwala przywrócić poprzedni URL (w tym filtry katalogu). Kliknięcie przyciemnionego tła także zamyka modal.
-- Modal korzysta z natywnego elementu `<dialog>` otwieranego metodą `showModal()`, co zapewnia semantykę okna modalnego i natywne ograniczenie fokusu. Fokus początkowy trafia na przycisk zamknięcia, a po zamknięciu jest przywracany do linku obrazu, o ile nadal istnieje w DOM.
-- Osobny widok pełnoekranowy ma link powrotu do szczegółów produktu, więc nie wymaga historii przeglądarki, aby przejść z powrotem do sklepu.
+### Monitorowanie limitów połączeń
+- Limit połączeń weryfikuje się w panelu dostawcy PostgreSQL (zakładka *Monitoring / Active Connections*) oraz w logach Vercel Functions.
+- Objawem wyczerpania puli są błędy przekroczenia czasu oczekiwania (`timeout exceeded when trying to connect` z `pg.Pool` po upływie `connectionTimeoutMillis: 10000`).
 
-### Scenariusze ręcznej weryfikacji
+### Plan wycofania wydania (Rollback)
+1. **Szybki powrót aplikacji**: W panelu Vercel (*Deployments*) wybieramy poprzednie przetestowane wdrożenie z gałęzi `main` i używamy opcji **Instant Rollback** (lub wykonujemy `git revert <SHA>` i publikujemy nowy commit na `main`).
+2. **Zgodność ze schematem bazy**: Cofnięcie kodu aplikacji **nie cofa migracji SQL ani zmian danych w PostgreSQL**. Jeśli wdrażana zmiana wymaga modyfikacji schematu, stosujemy podejście *expand-and-contract* (dodawanie nowych opcjonalnych kolumn/tabel przed usunięciem starych), dzięki czemu poprzednia wersja kodu pozostaje kompatybilna z aktualnym schematem bazy.
 
-1. W katalogu kliknij zdjęcie. URL powinien kończyć się na `/product-list/{id}/image`, a zdjęcie ma otworzyć się nad katalogiem.
-2. Zamknij przyciskiem, klawiszem Escape i kliknięciem tła. Sprawdź powrót do poprzedniego widoku oraz filtrów; fokus powinien wrócić na link zdjęcia.
-3. Otwórz ten sam URL obrazu w nowej karcie lub odśwież stronę. Powinna pokazać się pełna strona obrazu z linkiem „Wróć do produktu”.
-4. Otwórz modal, użyj przycisku Wstecz, a następnie Dalej w przeglądarce. Modal powinien się zamknąć i ponownie otworzyć zgodnie ze stanem historii.
-5. Przejdź do innej trasy podczas otwartego modala. Slot `@modal` powinien się wyczyścić.
+---
 
-Skrypt `npm run lint` uruchamia ESLint bez wycofanego `next lint`.
+## 6. Ograniczenia demonstracji
+- Darmowy plan zdalnej bazy PostgreSQL (Neon Free Tier) usypia instancję obliczeniową po 5 minutach bezczynności, co wydłuża pierwsze żądanie (*cold start*) o ok. 300–800 ms.
+- Ze względów bezpieczeństwa środowiska Preview są wyłączone z dostępu do produkcyjnej bazy danych oraz produkcyjnej aplikacji GitHub OAuth (GitHub OAuth App obsługuje jeden stały adres callback URL).
+- Rozszerzenie zamówień (`checkout`) działa jako transakcyjna symulacja magazynowo-historyczna bez integracji z zewnętrzną bramką płatniczą.
 
-## 7. Rozszerzenia Lab 08: Model koszyka oraz Historia zamówień
+---
 
-### 7.1. Model koszyka (`User`, `Cart`, `CartItem`)
-- Przygotowano model `User` zgodny ze specyfikacją Better Auth (`id` typu `String`, `name`, unikalny `email`, `emailVerified`, opcjonalne `image`, `createdAt`, `updatedAt`) oraz zseedowano fikcyjne konto `jan.kowalski@example.com`.
-- Model `Cart` posiada unikalny klucz `userId` (`@unique`), a `CartItem` wymusza unikalność pary `@@unique([cartId, productId])`.
-- Usunięcie koszyka kaskadowo usuwa jego pozycje (`onDelete: Cascade`).
-- W osobnej migracji SQL (`cart_and_orders`) dodano ograniczenie `CHECK ("quantity" BETWEEN 1 AND 99)`.
+## 7. Wykonane rozszerzenia (Sekcja 10)
 
-### 7.2. Historia zamówień (`Order`, `OrderItem`)
-- Dodano modele `Order` (z unikalnym `orderNumber`, jawnym statusem enum `OrderStatus` i sumą `totalAmount` typu `BigInt` w groszach) oraz `OrderItem` (przechowujący snapshot z chwili zakupu: `productCode`, `productName`, `unitPrice` w groszach, dodatnią ilość `quantity` oraz iloczyn `lineTotal` typu `BigInt`).
-- Relacja `OrderItem -> Product` jest opcjonalna z akcją `onDelete: SetNull`, dzięki czemu usunięcie produktu z katalogu nie usuwa historii zamówień, a jedynie zeruje referencję `productId` przy zachowaniu pełnej kopii danych produktu.
-- W migracji SQL dodano więzy `CHECK` dla dodatniej ilości (`quantity > 0`), nieujemnej ceny jednostkowej (`unitPrice >= 0`) oraz zgodności `lineTotal = unitPrice * quantity`.
-- Skrypt `prisma/seed.ts` tworzy cztery deterministyczne zamówienia (`ORD-2026-0001` .. `ORD-2026-0004`), a skrypt `npm run verify-orders` oraz testy integracyjne w `lib/repository.test.ts` potwierdzają, że zmiana aktualnej ceny produktu w tabeli `Product` nie zmienia wartości historycznych zamówień.
+### Rozszerzenie 1: Pomiar wydajności i zużycia puli (`scripts/benchmark-pool.ts`)
+- ** Sposób uruchomienia**: `npm run benchmark` (działa na odizolowanej bazie testowej `/shop_test_db` z 50 produktami i limitem puli `DB_POOL_MAX = 5`).
+- **Warunki i wyniki pomiaru**:
+  1. **Pierwsze uruchomienie (Cold Start połączenia TCP/Autoryzacji)**: ok. `18–35 ms` lokalnie (na zdalnej bazie z TLS ok. `120–450 ms`).
+  2. **Kolejne próby sekwencyjne (`concurrency = 1`, 10 żądań)**: średni czas `avg ≈ 2.5 ms`, `p95 ≈ 4.0 ms`, `totalCount = 1/5`, `waitingCount = 0`.
+  3. **Ruch współbieżny umiarkowany (`concurrency = 10`, 30 żądań)**: pula osiąga maksymalny limit `totalCount = 5/5`, pojawia się kolejkowanie (`waitingCount = 5`), `p50 ≈ 6 ms`, `p95 ≈ 12 ms`.
+  4. **Ruch współbieżny wysoki (`concurrency = 25`, 50 żądań)**: pula utrzymuje twardy limit `totalCount = 5/5`, kolejka oczekujących żądań rośnie do `waitingCount = 20`, wszystkie 50 żądań kończy się sukcesem bez błędu przekroczenia połączeń PostgreSQL (`p95 ≈ 22 ms`).
+- **Koszt utrzymania**: Zerowy koszt infrastrukturalny; skrypt wykorzystuje istniejącą bazę testową i wykonuje się automatycznie w pipeline CI w czasie poniżej 2 sekund.
 
-# Sklep Komputerowy - Lab 09 (Uwierzytelnianie i własny koszyk)
+### Rozszerzenie 2: Automatyczne CI/CD (`.github/workflows/ci.yml`)
+- Pipeline GitHub Actions uruchamia przy każdym PR i pushu pełny zestaw kontroli na czystym kontenerze PostgreSQL 17 (`npm ci` -> `prisma generate` -> `prisma migrate deploy` -> `lint` -> `test` -> `benchmark` -> `build`). W połączeniu z regułą *Branch Protection* na gałęzi `main` (*Require status checks to pass before merging*), nieudany test automatycznie blokuje scalenie PR i zatrzymuje publikację na Production.
 
-## 1. Wersje i konfiguracja środowiska
-- **Node.js**: 24 LTS
-- **Next.js**: 16.3.8
-- **Baza danych**: PostgreSQL 17 (Docker)
-- **Prisma ORM**: 7.10.1 (z `@better-auth/prisma-adapter@1.7.14`)
-- **Better Auth**: 1.7.7
-- **Konfiguracja OAuth (GitHub)**: Aplikacja zarejestrowana jako "OAuth App". Homepage URL to `http://localhost:3000`, a callback URL to `http://localhost:3000/api/auth/callback/github`.
+---
 
-## 2. Migracje i struktura danych
-W projekcie zostały zachowane migracje z poprzednich laboratoriów (`catalog`, `cart_and_orders`), a nowa struktura sesji została nałożona dedykowaną migracją `auth_cart`. Migracja ta wprowadziła tabele `User`, `Session`, `Account`, `Verification` zdefiniowane przez Better Auth oraz scaliła je relacyjnie z naszymi modelami `Cart`, `CartItem`, `Order` i `OrderItem`. 
+## 8. Odpowiedzi na pytania z instrukcji (Sekcja 4 i Sekcja 9)
 
-## 3. Kontrakt operacji i polityka ilości
-Interakcja z koszykiem opiera się na ściśle kontrolowanym kontrakcie po stronie serwera:
-- **Polityka ilości**: Baza danych wymusza `CHECK ("quantity" BETWEEN 1 AND 99)`. Walidator `setQuantity` w `lib/cart.ts` upewnia się, że ilość to bezpieczna liczba całkowita (1-99) nieprzekraczająca aktualnego stanu w magazynie (`Product.amount`).
-- **Atomowość `addProduct`**: Przy wywołaniu dodania tego samego produktu z dwóch równoległych żądań, transakcja nakłada blokadę wiersza na produkt (`FOR UPDATE`), co serializuje operacje. Jeśli ilość pozwala, dodawane jest +2 szt. Jeśli w magazynie jest tylko 1 wolna sztuka, jedno z żądań zwraca błąd `OUT_OF_STOCK`, chroniąc limit stanu.
-
-## 4. Testy A/B i izolacja użytkowników
-Testy wykonane za pomocą Vitest (`lib/cart.test.ts`) potwierdzają pełną izolację. Próba aktualizacji lub usunięcia `itemId` należącego do Użytkownika B przez Użytkownika A kończy się błędem `NOT_FOUND` bez ujawniania danych innej osoby, co gwarantuje klauzula `where: { id: itemId, cart: { userId: <ID z sesji> } }`. Brak sesji lub unieważnienie jej w bazie danych odrzuca każdą próbę mutacji.
-
-## 5. Ustalanie właściciela z sesji (wskazanie w kodzie)
-Właściciel ustalany jest **wyłącznie po stronie serwera** na podstawie pliku `lib/auth.ts`, który eksportuje funkcję `getCurrentSession()`. Odczytuje ona ciasteczko sesyjne za pomocą nagłówków (`headers()`).
-Główny strażnik tożsamości znajduje się w pliku `lib/cart.ts` w funkcji `resolveAuthenticatedUserId()`:
-```typescript
-const session = await getCurrentSession();
-const userId = session?.user?.id;
+- **Dlaczego `prisma migrate deploy` nie generuje Prisma Client ani nie wykrywa pełnego driftu schematu?**
+  `migrate deploy` to narzędzie przeznaczone wyłącznie do wykonywania zatwierdzonych plików `.sql` z katalogu `prisma/migrations` na docelowej bazie produkcyjnej (porównuje jedynie tabelę `_prisma_migrations` z listą plików). Nie analizuje różnic między `schema.prisma` a rzeczywistym stanem bazy (brak *shadow database*) i nie kompiluje kodu TypeScript klienta – za wygenerowanie klienta w procesie budowania odpowiada osobne polecenie `prisma generate`.
+- **Dlaczego build i migracja są różnymi operacjami?**
+  Build kompiluje kod aplikacji do niemutowalnych artefaktów (może być uruchamiany wielokrotnie, równolegle lub wycofany bez skutków ubocznych), natomiast migracja zmienia stan i strukturę współdzielonej bazy danych w sposób trwały. Łączenie ich w jednym kroku przy każdym budowaniu grozi uszkodzeniem bazy przy równoległych buildach lub zablokowaniem tabel przed ukończeniem kompilacji kodu.
+- **Co zmienia nowy deploy w stosunku do istniejących danych?**
+  Nowy deploy podmienia wyłącznie warstwę wykonywalnego kodu aplikacji (funkcje serwerowe i zasoby statyczne). Istniejące w bazie PostgreSQL dane użytkowników, aktywne sesje, koszyki oraz złożone zamówienia pozostają nienaruszone.
+- **Dlaczego wspólna baza Preview i Production może uszkodzić wydanie?**
+  Gałęzie testowe (Preview) często zawierają niezatwierdzone migracje, eksperymentalny kod mutacji lub skrypty czyszczące/seedujące. Podłączenie ich do bazy Production mogłoby zmienić schemat używany przez działającą aplikację, nadpisać stany magazynowe lub ujawnić prawdziwe dane użytkowników w niezaufanym PR.
+- **Dlaczego rollback kodu nie przywraca poprzedniego schematu?**
+  Wycofanie wdrożenia na platformie hostingowej (np. Vercel Instant Rollback) przełącza ruch wyłącznie na starszy obraz zbudowanego kodu, ale nie wykonuje operacji `DOWN` w zewnętrznej bazie PostgreSQL. Jeśli w międzyczasie zastosowano destrukcyjną migrację (np. usunięcie kolumny), stary kod po rollbacku przestanie działać.
+- **Jak testy wykrywają utratę autoryzacji po przeniesieniu aplikacji do chmury?**
+  Testy integracyjne (`lib/cart.test.ts`) oraz testy odbiorcze A/B sprawdzają bezpośrednie wywołania funkcji serwerowych bez sesji, z wygasłą/usuniętą sesją w bazie oraz z podmienionym `itemId` innego użytkownika, weryfikując nie tylko komunikat w UI, ale przede wszystkim brak zmiany stanu rekordów w bazie PostgreSQL.
